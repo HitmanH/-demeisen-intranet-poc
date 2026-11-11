@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Intranet{% endblock %} · {{ cfg.FIRM_NAME }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
+{% if me %}<header><a class="brand" href="/"><img src="{{ url_for('static', filename='logo.png') }}" alt="">{{ cfg.WORDMARK_TEXT }}</a>
+<nav><a href="/nda">NDAs</a><a href="/issue">Issue document</a><a href="/verify">Verify</a>
+<a href="/memos">Memos</a><a href="/audit">Audit</a></nav>
+<span class="who">{{ me.name }} · <a href="/password">password</a> · <a href="/logout">log out</a></span></header>{% endif %}
+<main>{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
+{% block body %}{% endblock %}</main></body></html>

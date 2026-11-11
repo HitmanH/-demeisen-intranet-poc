@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block body %}<h1>Who was this document issued to?</h1>
+<form method="post" enctype="multipart/form-data" class="card"><label>PDF<input type="file" name="file" accept=".pdf" required></label><button>Check</button></form>
+{% if hit %}<div class="card alert"><h2>Match: {{ hit.ref }}</h2><p>Issued to <b>{{ hit.prospect }}</b> on {{ hit.created|fromiso }}.</p></div>{% endif %}{% endblock %}

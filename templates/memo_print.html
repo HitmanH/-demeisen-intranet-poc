@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>{{ m.ref }}</title><style>body{font:11pt Georgia,serif;max-width:720px;margin:40px auto}table{width:100%;border-collapse:collapse}td,th{border:1px solid #999;padding:6px;text-align:left;vertical-align:top}.wm{letter-spacing:.2em;font:bold 10pt sans-serif;color:#1a2a4d}</style></head>
+<body onload="print()"><div class="wm">{{ cfg.WORDMARK_TEXT }}</div><h2>Internal memorandum — {{ m.ref }}</h2>
+<p><b>{{ m.title }}</b><br>Amount: {{ m.currency }} {{ '{:,.2f}'.format(m.amount) }}{% if m.supplier %} · Payee: {{ m.supplier }}{% endif %}<br>Raised by {{ m.author }}, {{ m.created|fromiso }}<br>Status: <b>{{ m.status }}</b></p>
+<p style="white-space:pre-wrap">{{ m.body }}</p><h3>Member sign-off</h3>
+<table><tr><th>Member</th><th>Decision</th><th>Date/time</th><th>Comment</th></tr>{% for x in members %}<tr><td>{{ x.name }}</td><td>{{ x.decision or 'Pending' }}</td><td>{{ x.at|fromiso }}</td><td>{{ x.comment or '' }}</td></tr>{% endfor %}</table>
+<p style="font-size:8pt;color:#666">Electronic sign-off recorded by the {{ cfg.FIRM_NAME }} intranet. Each decision is tied to the member's authenticated login.</p></body></html>

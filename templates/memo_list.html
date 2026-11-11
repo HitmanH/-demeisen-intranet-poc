@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block body %}<h1>Expenditure memos <a class="btn" href="/memos/new">+ New memo</a></h1>
+<table><tr><th>Ref</th><th>Title</th><th>Amount</th><th>Status</th><th>Sign-offs</th><th>Raised by</th></tr>
+{% for m in rows %}<tr><td><a href="/memos/{{m.id}}">{{ m.ref }}</a></td><td>{{ m.title }}</td><td>{{ m.currency }} {{ '{:,.2f}'.format(m.amount) }}</td>
+<td><span class="pill s-{{ m.status.split()[0]|lower }}">{{ m.status }}</span></td><td>{{ m.approvals }}/{{ n }}</td><td>{{ m.author }}</td></tr>
+{% else %}<tr><td colspan="6">No memos yet.</td></tr>{% endfor %}</table>{% endblock %}

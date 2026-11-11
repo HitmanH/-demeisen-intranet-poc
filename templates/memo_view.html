@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block body %}<h1>{{ m.ref }} — {{ m.title }} <span class="pill s-{{ m.status.split()[0]|lower }}">{{ m.status }}</span></h1>
+<div class="two"><div class="card"><p><b>{{ m.currency }} {{ '{:,.2f}'.format(m.amount) }}</b>{% if m.amount >= cfg.MATERIAL_THRESHOLD %} <span class="pill s-rejected">Material</span>{% endif %}
+{% if m.supplier %} to {{ m.supplier }}{% endif %}</p><p class="small">Raised by {{ m.author }} on {{ m.created|fromiso }}</p>
+<div class="memo">{{ m.body }}</div>{% if m.attachment %}<p><a href="/files/uploads/{{ m.attachment }}">Supporting document</a></p>{% endif %}
+<p><a href="/memos/{{m.id}}/print" target="_blank">Printable sign-off record</a></p></div>
+<div class="card"><h2>Sign-off</h2><table>{% for x in members %}<tr><td>{{ x.name }}</td>
+<td>{% if x.decision %}<span class="pill s-{{ x.decision|lower }}">{{ x.decision }}</span>{% else %}<span class="pill">Pending</span>{% endif %}</td>
+<td class="small">{{ x.at|fromiso }}<br>{{ x.comment or '' }}</td></tr>{% endfor %}</table>
+{% if m.status == 'Awaiting sign-off' %}<form method="post"><label>Comment<textarea name="comment" rows="2"></textarea></label>
+<label class="check"><input type="checkbox" required> I have reviewed this memo and its supporting documents</label>
+<button name="action" value="Approved">{{ 'Change to approve' if mine and mine.decision else 'Approve' }}</button>
+<button name="action" value="Rejected" class="danger">Reject</button></form>
+{% if m.created_by == me.id %}<form method="post"><button name="action" value="withdraw" class="secondary">Withdraw memo</button></form>{% endif %}{% endif %}
+</div></div>{% endblock %}

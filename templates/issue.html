@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block body %}<h1>Issue a personalised document</h1>
+<form method="post" enctype="multipart/form-data" class="card"><p>Upload a Word document. Any <code>{{ '{{PROSPECT}}' }}</code>, <code>{{ '{{DATE}}' }}</code> or <code>{{ '{{REF}}' }}</code> placeholders are filled in; every page gets a "Prepared exclusively for…" header, a reference footer, and a {{ cfg.WORDMARK_TEXT }} wordmark/watermark in the PDF. Each issue is logged so a forwarded copy can be traced.</p>
+<div class="two"><label>Prospect / recipient name<input name="prospect" required></label>
+<label>Word document (.docx)<input type="file" name="file" accept=".docx" required></label>
+<label>Optional PDF open password<input name="password"></label><label>Notes<input name="notes"></label></div>
+<button>Generate PDF</button></form>
+<h2>Issue register</h2><table><tr><th>Ref</th><th>Recipient</th><th>Source</th><th>Files</th><th>Issued</th><th>By</th></tr>
+{% for r in rows %}<tr><td>{{ r.ref }}</td><td>{{ r.prospect }}</td><td>{{ r.src_name }}</td>
+<td><a href="/files/generated/{{ r.pdf }}">PDF</a> · <a href="/files/generated/{{ r.docx }}">Word</a></td><td>{{ r.created|fromiso }}</td><td>{{ r.author }}</td></tr>
+{% else %}<tr><td colspan="6">Nothing issued yet.</td></tr>{% endfor %}</table>{% endblock %}
