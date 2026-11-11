@@ -25,3 +25,8 @@ Flask + SQLite app. See README.md for features.
 See `deploy/README.md`. Automatic daily snapshots (03:00 UTC) are enabled. Snapshot
 `demeisen-intranet-pre-deploy-20261111` was taken before the first update. The sandbox can't reach
 the server, so the update step is run by the user from Lightsail browser SSH (`deploy/update.sh`).
+
+## Planned migration (agreed with user 2026-11-11)
+Move off Lightsail to App Runner + RDS **MySQL** (db.t4g.micro, 7-day automated backups) + private S3 for
+generated/uploaded files, same account 642552605309, region eu-west-2. Default App Runner URL is fine.
+Keep Lightsail instance + snapshots stopped (not deleted) until the user confirms the migrated data is complete.
