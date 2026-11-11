@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+data/intranet.db
+data/generated
+data/uploads
+deploy

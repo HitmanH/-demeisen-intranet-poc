@@ -1,15 +1,20 @@
-import os, sqlite3, uuid, json
+import os, uuid, json, tempfile
 from datetime import datetime, date
 from functools import wraps
 from flask import (Flask, g, render_template, request, redirect, url_for, session,
                    flash, send_from_directory, abort)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import config, documents as D
+import config, documents as D, dbconn, storage
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
-GEN, UPL = os.path.join(DATA, "generated"), os.path.join(DATA, "uploads")
+if storage.BUCKET:   # files live in S3; local dirs are scratch space only
+    _SCRATCH = tempfile.mkdtemp(prefix="intranet-")
+    GEN, UPL = os.path.join(_SCRATCH, "generated"), os.path.join(_SCRATCH, "uploads")
+else:
+    GEN, UPL = os.path.join(DATA, "generated"), os.path.join(DATA, "uploads")
+os.makedirs(GEN, exist_ok=True); os.makedirs(UPL, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
@@ -20,31 +25,13 @@ if os.environ.get("INTRANET_PROD"):
                       SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=8 * 3600)
 _FAILS = {}
 
-SCHEMA = """
-create table if not exists users(id integer primary key, name text, email text unique,
-  pw text, admin int default 0, active int default 1);
-create table if not exists ndas(id integer primary key, ref text, counterparty text, cp_details text,
-  cp_type text, purpose text, ci_scope text, duration text, conf_period text, governing_law text,
-  changes text, effective_date text, our_signatory text, cp_signatory text, cp_signatory_title text,
-  cp_email text, status text, docx text, pdf text, signed text, created_by int, created text);
-create table if not exists issues(id integer primary key, ref text, prospect text, src_name text,
-  docx text, pdf text, sha text, notes text, created_by int, created text);
-create table if not exists memos(id integer primary key, ref text, title text, amount real,
-  currency text, supplier text, body text, attachment text, status text, created_by int, created text);
-create table if not exists signoffs(id integer primary key, memo_id int, user_id int, decision text,
-  comment text, at text, ip text, unique(memo_id, user_id));
-create table if not exists audit(id integer primary key, at text, user_id int, entity text,
-  entity_id int, action text, detail text);
-"""
-
 NDA_STATUSES = ["Draft", "Internal review", "Sent to counterparty", "Signed by counterparty",
                 "Fully executed", "Expired / terminated"]
 
 
 def db():
     if "db" not in g:
-        g.db = sqlite3.connect(os.path.join(DATA, "intranet.db"))
-        g.db.row_factory = sqlite3.Row
+        g.db = dbconn.Conn(os.path.join(DATA, "intranet.db"))
     return g.db
 
 
@@ -55,10 +42,8 @@ def _close(e):
 
 def init_db():
     with app.app_context():
-        c = db(); c.executescript(SCHEMA)
-        cols = [r[1] for r in c.execute("pragma table_info(ndas)")]
-        for col in ("dispute", "our_title", "our_email"):
-            if col not in cols: c.execute(f"alter table ndas add column {col} text")
+        c = db(); c.ensure_schema()
+        import migrate_import; migrate_import.run(c)
         for m in config.MEMBERS:
             c.execute("insert or ignore into users(name,email,pw,admin) values(?,?,?,?)",
                       (m["name"], m["email"], generate_password_hash("changeme"), int(m["admin"])))
@@ -145,6 +130,7 @@ def home():
 @login_required
 def files(kind, name):
     if kind not in ("generated", "uploads"): abort(404)
+    if storage.BUCKET: return redirect(storage.download_url(kind, secure_filename(name)))
     return send_from_directory(os.path.join(DATA, kind), name, as_attachment=True)
 
 # --------------------------------------------------------------- 1. NDAs
@@ -185,7 +171,7 @@ def _generate_nda(nid):
     raw = D.docx_to_pdf(docx, GEN)
     pdf = os.path.join(GEN, base + "_issued.pdf")
     D.wordmark_pdf(raw, pdf, n["counterparty"], n["ref"], append=None, brand=False)
-    os.remove(raw)
+    os.remove(raw); storage.put("generated", docx); storage.put("generated", pdf)
     db().execute("update ndas set docx=?, pdf=? where id=?", (os.path.basename(docx), os.path.basename(pdf), nid))
     db().commit()
 
@@ -203,7 +189,7 @@ def nda_view(nid):
             _generate_nda(nid); audit("nda", nid, "regenerated")
         elif act == "signed" and request.files.get("file"):
             fn = secure_filename(f"{n['ref']}_signed_{request.files['file'].filename}")
-            request.files["file"].save(os.path.join(UPL, fn))
+            request.files["file"].save(os.path.join(UPL, fn)); storage.put("uploads", os.path.join(UPL, fn))
             db().execute("update ndas set signed=?, status='Fully executed' where id=?", (fn, nid))
             audit("nda", nid, "signed copy uploaded", fn)
         db().commit(); return redirect(url_for("nda_view", nid=nid))
@@ -220,14 +206,14 @@ def issue():
         if not f or not f.filename.lower().endswith(".docx") or not prospect:
             flash("Upload a .docx and enter the prospect's name", "error"); return redirect(url_for("issue"))
         ref = newref("DOC")
-        src = os.path.join(UPL, secure_filename(f"{ref}_src_{f.filename}")); f.save(src)
+        src = os.path.join(UPL, secure_filename(f"{ref}_src_{f.filename}")); f.save(src); storage.put("uploads", src)
         stem = secure_filename(f"{ref}_{os.path.splitext(f.filename)[0]}_{prospect}")
         docx = os.path.join(GEN, stem + ".docx")
         D.personalise_docx(src, docx, prospect, ref)
         raw = D.docx_to_pdf(docx, GEN)
         pdf = os.path.join(GEN, stem + "_wm.pdf")
         D.wordmark_pdf(raw, pdf, prospect, ref, password=request.form.get("password") or None)
-        os.remove(raw)
+        os.remove(raw); storage.put("generated", docx); storage.put("generated", pdf)
         cur = db().execute("insert into issues(ref,prospect,src_name,docx,pdf,sha,notes,created_by,created) values(?,?,?,?,?,?,?,?,?)",
                            (ref, prospect, f.filename, os.path.basename(docx), os.path.basename(pdf), D.sha256(pdf),
                             request.form.get("notes", ""), session["uid"], now()))
@@ -286,7 +272,7 @@ def memo_new():
         f = request.form; att = None
         if request.files.get("file") and request.files["file"].filename:
             att = secure_filename(f"{uuid.uuid4().hex[:6]}_{request.files['file'].filename}")
-            request.files["file"].save(os.path.join(UPL, att))
+            request.files["file"].save(os.path.join(UPL, att)); storage.put("uploads", os.path.join(UPL, att))
         ref = newref("MEMO")
         cur = db().execute("insert into memos(ref,title,amount,currency,supplier,body,attachment,status,created_by,created) values(?,?,?,?,?,?,?,?,?,?)",
                            (ref, f["title"], float(f["amount"] or 0), f["currency"], f["supplier"], f["body"], att,
@@ -332,6 +318,10 @@ def memo_print(mid):
 def audit_log():
     rows = db().execute("select a.*, u.name from audit a left join users u on u.id=a.user_id order by a.id desc limit 500").fetchall()
     return render_template("audit.html", rows=rows)
+
+
+@app.route("/healthz")
+def healthz(): return "ok"
 
 
 init_db()
