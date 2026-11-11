@@ -21,7 +21,7 @@ Flask + SQLite app. See README.md for features.
 - This sandbox cannot reach cloudfront.net or the server IP directly; verify via the server uploading a
   status file to a presigned S3 PUT URL, or ask the user to check.
 
-## Pending task
-The live server runs the first commit. Deploy the latest `main` (NDA layout fixes) **in place**, and set up a
-repeatable, data-preserving update method (e.g. Lightsail snapshot, then a temporary SSH rule limited to the
-session's egress IP or a pull-based updater) – code files only, keep `data/`.
+## Deploying
+See `deploy/README.md`. Automatic daily snapshots (03:00 UTC) are enabled. Snapshot
+`demeisen-intranet-pre-deploy-20261111` was taken before the first update. The sandbox can't reach
+the server, so the update step is run by the user from Lightsail browser SSH (`deploy/update.sh`).
