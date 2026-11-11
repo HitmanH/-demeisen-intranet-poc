@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-
+ADD https://truststore.pki.rds.amazonaws.com/eu-west-2/eu-west-2-bundle.pem /app/rds-ca.pem
 RUN useradd -m app && chown -R app /app && chmod 644 /app/rds-ca.pem
 USER app
 ENV INTRANET_PROD=1 PYTHONUNBUFFERED=1 DB_SSL_CA=/app/rds-ca.pem
