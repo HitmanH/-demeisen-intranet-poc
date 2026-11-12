@@ -1,17 +1,12 @@
-# Deploying updates (data-preserving)
+# Deploying updates
 
-Live data (`/opt/intranet/data/intranet.db`, `data/generated`, `data/uploads`) is never touched.
+The intranet runs on AWS Lambda with data in RDS MySQL and S3, so a deploy only replaces code. Data is never touched.
 
-1. **Snapshot** (automatic daily snapshots at 03:00 UTC are enabled; take a manual one before a deploy):
-   Lightsail console → Instances → demeisen-intranet → Snapshots → *Create snapshot*.
-2. **Open browser SSH** (Lightsail's console IPs only): `python3 deploy/console_ssh.py open`
-   (or in the console Networking tab add SSH restricted to "Lightsail browser SSH/RDP").
-3. In the Lightsail console click **Connect using SSH** and paste:
-   ```
-   curl -fsSL https://raw.githubusercontent.com/HitmanH/-demeisen-intranet-poc/main/deploy/update.sh | sudo bash
-   ```
-   It backs up code + a DB copy to `/opt/intranet-backups/<time>`, installs the new code,
-   restarts `intranet`, and rolls the code back automatically if the app doesn't come up.
-4. **Close SSH again**: `python3 deploy/console_ssh.py close`.
+```
+python3 deploy/deploy.py            # deploy the current commit (needs AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+python3 deploy/deploy.py <git-ref>  # or a specific branch/commit
+```
+It builds the image in CodeBuild, points Lambda at it, and checks `/healthz`. To roll back, deploy the previous commit.
 
-Once the script is on the server, later updates can also be run as `sudo /opt/intranet/deploy/update.sh`.
+`aws_setup.py` creates the infrastructure (idempotent; only needed once). `update.sh` and `console_ssh.py`
+are for the old Lightsail server only.
