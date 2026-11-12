@@ -9,7 +9,7 @@ import config, documents as D, dbconn, storage
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
-if storage.BUCKET:   # files live in S3; local dirs are scratch space only
+if storage.BUCKET or os.environ.get("AUTH_ONLY"):   # files live in S3; local dirs are scratch space only
     _SCRATCH = tempfile.mkdtemp(prefix="intranet-")
     GEN, UPL = os.path.join(_SCRATCH, "generated"), os.path.join(_SCRATCH, "uploads")
 else:
@@ -24,6 +24,14 @@ if os.environ.get("INTRANET_PROD"):
     app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
                       SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=8 * 3600)
 _FAILS = {}
+
+# Shared sign-in (OpenID Connect, e.g. the Demeisen Cognito pool) when configured; built-in passwords otherwise.
+OIDC = None
+if os.environ.get("OIDC_ISSUER"):
+    from demeisen_auth import OIDC as _OIDC
+    OIDC = _OIDC(app, issuer=os.environ["OIDC_ISSUER"], client_id=os.environ["OIDC_CLIENT_ID"],
+                 client_secret=os.environ.get("OIDC_CLIENT_SECRET"), base_url=os.environ["PUBLIC_URL"],
+                 logout_url=os.environ.get("OIDC_LOGOUT_URL"))
 
 NDA_STATUSES = ["Draft", "Internal review", "Sent to counterparty", "Signed by counterparty",
                 "Fully executed", "Expired / terminated"]
@@ -67,13 +75,21 @@ def me():
 def login_required(f):
     @wraps(f)
     def w(*a, **k):
-        if not session.get("uid"): return redirect(url_for("login", next=request.path))
+        if OIDC:
+            email = OIDC.email()
+            if not email:
+                session.pop("uid", None); return redirect(OIDC.login_url(request.path))
+            if not session.get("uid"):
+                u = db().execute("select id from users where email=? and active=1", (email,)).fetchone()
+                if not u: return render_template("no_access.html", email=email), 403
+                session["uid"] = u["id"]
+        elif not session.get("uid"): return redirect(url_for("login", next=request.path))
         return f(*a, **k)
     return w
 
 
 @app.context_processor
-def inject(): return {"cfg": config, "me": me() if session.get("uid") else None}
+def inject(): return {"cfg": config, "me": me() if session.get("uid") else None, "shared_signin": bool(OIDC)}
 
 
 @app.template_filter("fromiso")
@@ -82,6 +98,7 @@ def fromiso(s): return s.replace("T", " ") if s else ""
 # --------------------------------------------------------------- auth / home
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if OIDC: return redirect(OIDC.login_url(request.args.get("next") or "/"))
     if request.method == "POST":
         import time
         key = request.remote_addr; t = time.time()
@@ -102,12 +119,15 @@ def login():
 
 
 @app.route("/logout")
-def logout(): session.clear(); return redirect(url_for("login"))
+def logout():
+    if OIDC: return redirect("/auth/logout")
+    session.clear(); return redirect(url_for("login"))
 
 
 @app.route("/password", methods=["GET", "POST"])
 @login_required
 def password():
+    if OIDC: return redirect("/")       # passwords are managed by the shared sign-in
     if request.method == "POST":
         if not check_password_hash(me()["pw"], request.form["old"]): flash("Current password wrong", "error")
         elif len(request.form["new"]) < 8: flash("Use at least 8 characters", "error")
@@ -325,6 +345,7 @@ def audit_log():
 def healthz(): return "ok"
 
 
-init_db()
+if not os.environ.get("AUTH_ONLY"):   # the sign-in-only function has no database
+    init_db()
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

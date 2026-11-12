@@ -14,7 +14,7 @@
   </nav>
   <div class="top-right">
     {% if cfg.APPS %}<nav class="apps" aria-label="Apps"><a href="/" aria-current="true">Intranet</a>{% for a in cfg.APPS %}<a href="{{ a.url }}">{{ a.title }}</a>{% endfor %}</nav>{% endif %}
-    <span>{{ me.name }}</span><a href="/password">Password</a><a href="/logout">Sign out</a>
+    <span>{{ me.name }}</span>{% if not shared_signin %}<a href="/password">Password</a>{% endif %}<a href="/logout">Sign out</a>
   </div>
 </div></header>{% endif %}
 <main><div class="wrap">{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}

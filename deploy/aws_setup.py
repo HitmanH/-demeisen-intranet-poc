@@ -104,7 +104,30 @@ phases:
                              "environmentVariables": [{"name": "REPO", "value": repo}]})
     (cb.update_project if cb.batch_get_projects(names=[NAME])["projects"] else cb.create_project)(**proj)
 
-    print(json.dumps(dict(repo=repo, db_host=d["Endpoint"]["Address"], app_sg=app_sg, files=FILES, build=BUILD)))
+    print(json.dumps(dict(cdn=cloudfront(),repo=repo, db_host=d["Endpoint"]["Address"], app_sg=app_sg, files=FILES, build=BUILD)))
+
+
+def cloudfront():
+    """CloudFront address in front of the Lambda Function URL (https://<id>.cloudfront.net). No caching."""
+    cf = boto3.client("cloudfront")
+    for d in cf.list_distributions().get("DistributionList", {}).get("Items", []):
+        if d.get("Comment") == NAME: return d["DomainName"]
+    lam = boto3.client("lambda", region_name=R)
+    try: origin = lam.get_function_url_config(FunctionName=NAME)["FunctionUrl"].split("/")[2]
+    except lam.exceptions.ResourceNotFoundException: return None   # run deploy.py first, then re-run this
+    d = cf.create_distribution(DistributionConfig={
+        "CallerReference": f"{NAME}-{int(time.time())}", "Comment": NAME, "Enabled": True, "HttpVersion": "http2and3",
+        "PriceClass": "PriceClass_100",
+        "Origins": {"Quantity": 1, "Items": [{"Id": "lambda", "DomainName": origin,
+            "CustomOriginConfig": {"HTTPPort": 80, "HTTPSPort": 443, "OriginProtocolPolicy": "https-only",
+                                   "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]}, "OriginReadTimeout": 60}}]},
+        "DefaultCacheBehavior": {"TargetOriginId": "lambda", "ViewerProtocolPolicy": "redirect-to-https", "Compress": True,
+            "AllowedMethods": {"Quantity": 7, "Items": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+                               "CachedMethods": {"Quantity": 2, "Items": ["GET", "HEAD"]}},
+            "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",          # Managed-CachingDisabled
+            "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac"}})  # Managed-AllViewerExceptHostHeader
+    return d["Distribution"]["DomainName"]
+
 
 if __name__ == "__main__":
     main()
