@@ -19,6 +19,7 @@ MATERIAL_THRESHOLD = 5000
 
 # Home page tiles
 LINKS = [
+    {"title": "CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net"), "desc": "Demeisen CRM"},
     {"title": "Email", "url": "https://outlook.office.com", "desc": "Webmail"},
     {"title": "OneNDA", "url": "https://www.onenda.org/products/onenda", "desc": "OneNDA standard terms"},
     {"title": "Companies House", "url": "https://find-and-update.company-information.service.gov.uk/", "desc": "Company search"},
