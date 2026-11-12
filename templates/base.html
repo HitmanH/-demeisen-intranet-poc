@@ -1,9 +1,21 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}Intranet{% endblock %} · {{ cfg.FIRM_NAME }}</title>
+<link rel="icon" href="{{ url_for('static', filename='ui/assets/favicon.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='ui/demeisen.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
-{% if me %}<header><a class="brand" href="/"><img src="{{ url_for('static', filename='logo.png') }}" alt="">{{ cfg.WORDMARK_TEXT }}</a>
-<nav><a href="/nda">NDAs</a><a href="/issue">Issue document</a><a href="/verify">Verify</a>
-<a href="/memos">Memos</a><a href="/audit">Audit</a></nav>
-<span class="who">{{ me.name }} · <a href="/password">password</a> · <a href="/logout">log out</a></span></header>{% endif %}
-<main>{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
-{% block body %}{% endblock %}</main></body></html>
+{% set here = request.path %}
+{% if me %}<header class="top"><div class="wrap">
+  <a class="brand" href="/"><i class="brand-mark" aria-hidden="true"></i>{{ cfg.BRAND_NAME }} <span>Intranet</span></a>
+  <nav class="tabs" aria-label="Sections">
+    {% for href, label in [("/", "Home"), ("/nda", "NDAs"), ("/issue", "Issue document"), ("/verify", "Verify"), ("/memos", "Memos"), ("/audit", "Audit")] %}
+    <a href="{{ href }}"{% if (href == "/" and here == "/") or (href != "/" and here.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+  </nav>
+  <div class="top-right">
+    {% if cfg.APPS %}<nav class="apps" aria-label="Apps"><a href="/" aria-current="true">Intranet</a>{% for a in cfg.APPS %}<a href="{{ a.url }}">{{ a.title }}</a>{% endfor %}</nav>{% endif %}
+    <span>{{ me.name }}</span><a href="/password">Password</a><a href="/logout">Sign out</a>
+  </div>
+</div></header>{% endif %}
+<main><div class="wrap">{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
+{% block body %}{% endblock %}</div></main></body></html>

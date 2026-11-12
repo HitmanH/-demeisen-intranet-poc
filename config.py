@@ -5,6 +5,7 @@ FIRM_NAME = "Demeisen LLP"
 FIRM_ADDRESS = "c/o HaysMac, 10 Queen Street Place, London EC4R 1AG, United Kingdom"
 FIRM_OPERATING_ADDRESS = "53 Davies Street, London W1K 5JH"
 FIRM_COMPANY_NO = "OC460451"
+BRAND_NAME = "Demeisen"            # shown in the header
 WORDMARK_TEXT = "DEMEISEN"          # used for PDF wordmark/watermark
 SECRET_KEY = os.environ.get("INTRANET_SECRET", "dev-change-me")
 
@@ -16,6 +17,11 @@ MEMBERS = [
 
 # Memos at or above this value are flagged "material" (all members must sign off)
 MATERIAL_THRESHOLD = 5000
+
+# Other Demeisen apps, shown in the header app switcher
+APPS = [
+    {"title": "CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net")},
+]
 
 # Home page tiles
 LINKS = [
