@@ -1,5 +1,5 @@
 """Idempotent setup of the intranet's AWS stack (account 642552605309, eu-west-2):
-private S3 bucket, ECR repo, CodeBuild image build, RDS MySQL, secrets, IAM roles, App Runner.
+private S3 bucket, ECR repo, CodeBuild image build, RDS MySQL, secrets, IAM role for CodeBuild. The Lambda function itself is created by deploy/deploy.py.
 Safe to re-run: existing resources are left as they are. Never deletes anything.
 Usage: python3 deploy/aws_setup.py    (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in env)"""
 import json, secrets, time, boto3
@@ -11,7 +11,6 @@ FILES = f"{NAME}-files-{ACCT}"; BUILD = f"{NAME}-build-{ACCT}"
 s3 = boto3.client("s3", region_name=R); iam = boto3.client("iam"); ec2 = boto3.client("ec2", region_name=R)
 rds = boto3.client("rds", region_name=R); sm = boto3.client("secretsmanager", region_name=R)
 ecr = boto3.client("ecr", region_name=R); cb = boto3.client("codebuild", region_name=R)
-ar = boto3.client("apprunner", region_name=R)
 
 
 def exists(fn, *codes):
@@ -56,7 +55,7 @@ def main():
         f = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [n]}, {"Name": "vpc-id", "Values": [vpc]}])
         return f["SecurityGroups"][0]["GroupId"] if f["SecurityGroups"] else \
             ec2.create_security_group(GroupName=n, Description=desc, VpcId=vpc)["GroupId"]
-    app_sg = sg(f"{NAME}-app", "App Runner VPC connector")
+    app_sg = sg(f"{NAME}-app", "intranet Lambda")
     rts = [t["RouteTableId"] for t in ec2.describe_route_tables(Filters=[{"Name": "vpc-id", "Values": [vpc]}])["RouteTables"]]
     if not ec2.describe_vpc_endpoints(Filters=[{"Name": "vpc-id", "Values": [vpc]},
                                                {"Name": "service-name", "Values": [f"com.amazonaws.{R}.s3"]}])["VpcEndpoints"]:
@@ -67,7 +66,7 @@ def main():
     for g in d["VpcSecurityGroups"]:   # allow MySQL from the intranet app only (additive)
         exists(lambda: ec2.authorize_security_group_ingress(GroupId=g["VpcSecurityGroupId"], IpPermissions=[{
             "IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306,
-            "UserIdGroupPairs": [{"GroupId": app_sg, "Description": "demeisen-intranet App Runner"}]}]),
+            "UserIdGroupPairs": [{"GroupId": app_sg, "Description": "demeisen-intranet Lambda"}]}]),
             "InvalidPermission.Duplicate")
     db_admin_secret = d["MasterUserSecret"]["SecretArn"]
     if not exists(lambda: sm.describe_secret(SecretId=f"{NAME}/db-password"), "ResourceNotFoundException"):
@@ -87,17 +86,6 @@ def main():
                                        "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchGetImage",
                                        "ecr:GetDownloadUrlForLayer"],
          "Resource": f"arn:aws:ecr:{R}:{ACCT}:repository/{NAME}"}]})
-    access_role = role(f"{NAME}-apprunner-ecr", "build.apprunner.amazonaws.com",
-                       ["arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"])
-    inst_role = role(f"{NAME}-apprunner-instance", "tasks.apprunner.amazonaws.com", inline={"Version": "2012-10-17", "Statement": [
-        {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": f"arn:aws:s3:::{FILES}/*"},
-        {"Effect": "Allow", "Action": "s3:ListBucket", "Resource": f"arn:aws:s3:::{FILES}"},
-        {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": [db_secret, flask_secret]}]})
-    # first deploy only: let the app create its database/user with the server admin login (removed afterwards)
-    if "--bootstrap" in __import__("sys").argv:
-        iam.put_role_policy(RoleName=f"{NAME}-apprunner-instance", PolicyName="bootstrap-db-admin", PolicyDocument=json.dumps(
-            {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": db_admin_secret}]}))
-
     # --- CodeBuild: builds the image from a source zip in the build bucket
     spec = """version: 0.2
 phases:
@@ -116,11 +104,7 @@ phases:
                              "environmentVariables": [{"name": "REPO", "value": repo}]})
     (cb.update_project if cb.batch_get_projects(names=[NAME])["projects"] else cb.create_project)(**proj)
 
-    # --- App Runner (created once the first image exists)
-    print(json.dumps(dict(repo=repo, db_host=d["Endpoint"]["Address"], db_secret=db_secret, flask_secret=flask_secret,
-                          access_role=access_role, inst_role=inst_role, app_sg=app_sg, subnets=subnets,
-                          files=FILES, build=BUILD)))
-
+    print(json.dumps(dict(repo=repo, db_host=d["Endpoint"]["Address"], app_sg=app_sg, files=FILES, build=BUILD)))
 
 if __name__ == "__main__":
     main()
