@@ -20,7 +20,7 @@ MATERIAL_THRESHOLD = 5000
 
 # Other Demeisen apps, shown in the header app switcher
 APPS = [
-    {"title": "CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net")},
+    {"title": "Investor CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net")},
 ]
 
 # Home page tiles
