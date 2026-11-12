@@ -44,7 +44,8 @@ def create_service(env_extra):
     admin = d["MasterUserSecret"]["SecretArn"]
     flask_secret = sm.describe_secret(SecretId=f"{NAME}/flask-secret")["ARN"]
     vpc = ec2.describe_vpcs(Filters=[{"Name": "is-default", "Values": ["true"]}])["Vpcs"][0]["VpcId"]
-    subnets = [s["SubnetId"] for s in ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc]}])["Subnets"]]
+    subnets = [s["SubnetId"] for s in ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc]}])["Subnets"]
+               if s["AvailabilityZoneId"] != "euw2-az4"]   # App Runner doesn't support this AZ
     app_sg = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [f"{NAME}-app"]}])["SecurityGroups"][0]["GroupId"]
     conns = [c for c in ar.list_vpc_connectors()["VpcConnectors"] if c["VpcConnectorName"] == NAME and c["Status"] == "ACTIVE"]
     conn = conns[0]["VpcConnectorArn"] if conns else ar.create_vpc_connector(
