@@ -97,3 +97,21 @@ class Conn:
             for col in ("dispute", "our_title", "our_email"):
                 if col not in cols: self._c.execute(f"alter table ndas add column {col} text")
         self.commit()
+
+
+def bootstrap():
+    """Create the intranet database + its own least-privilege user on a shared MySQL server.
+    Only runs when DB_ADMIN_USER/DB_ADMIN_PASSWORD are provided (first deploy); idempotent."""
+    if not (MYSQL and os.environ.get("DB_ADMIN_USER")): return
+    import pymysql
+    name, user, pw = os.environ.get("DB_NAME", "intranet"), os.environ["DB_USER"], os.environ["DB_PASSWORD"]
+    assert re.fullmatch(r"\w+", name) and re.fullmatch(r"\w+", user)
+    c = pymysql.connect(host=os.environ["DB_HOST"], port=int(os.environ.get("DB_PORT", 3306)),
+                        user=os.environ["DB_ADMIN_USER"], password=os.environ["DB_ADMIN_PASSWORD"], charset="utf8mb4",
+                        ssl={"ca": os.environ["DB_SSL_CA"]} if os.environ.get("DB_SSL_CA") else None)
+    with c.cursor() as k:
+        k.execute(f"create database if not exists `{name}` character set utf8mb4 collate utf8mb4_unicode_ci")
+        k.execute(f"create user if not exists '{user}'@'%%' identified by %s", (pw,))
+        k.execute(f"alter user '{user}'@'%%' identified by %s", (pw,))
+        k.execute(f"grant all privileges on `{name}`.* to '{user}'@'%'")
+    c.commit(); c.close(); print("BOOTSTRAP ok", flush=True)

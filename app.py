@@ -41,6 +41,7 @@ def _close(e):
 
 
 def init_db():
+    dbconn.bootstrap()
     with app.app_context():
         c = db(); c.ensure_schema()
         import migrate_import; migrate_import.run(c)
