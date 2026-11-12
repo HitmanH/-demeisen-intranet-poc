@@ -5,7 +5,7 @@ Usage: python3 deploy/aws_setup.py    (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 import json, secrets, time, boto3
 from botocore.exceptions import ClientError
 
-R = "eu-west-2"; NAME = "demeisen-intranet"
+R = "eu-west-2"; NAME = "demeisen-intranet"; DB_SERVER = "demeisen-crm-poc"
 ACCT = boto3.client("sts").get_caller_identity()["Account"]
 FILES = f"{NAME}-files-{ACCT}"; BUILD = f"{NAME}-build-{ACCT}"
 s3 = boto3.client("s3", region_name=R); iam = boto3.client("iam"); ec2 = boto3.client("ec2", region_name=R)
@@ -56,29 +56,23 @@ def main():
         f = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [n]}, {"Name": "vpc-id", "Values": [vpc]}])
         return f["SecurityGroups"][0]["GroupId"] if f["SecurityGroups"] else \
             ec2.create_security_group(GroupName=n, Description=desc, VpcId=vpc)["GroupId"]
-    app_sg = sg(f"{NAME}-app", "App Runner VPC connector"); db_sg = sg(f"{NAME}-db", "RDS, MySQL from app only")
-    exists(lambda: ec2.authorize_security_group_ingress(GroupId=db_sg, IpPermissions=[{
-        "IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306, "UserIdGroupPairs": [{"GroupId": app_sg}]}]),
-        "InvalidPermission.Duplicate")
+    app_sg = sg(f"{NAME}-app", "App Runner VPC connector")
     rts = [t["RouteTableId"] for t in ec2.describe_route_tables(Filters=[{"Name": "vpc-id", "Values": [vpc]}])["RouteTables"]]
     if not ec2.describe_vpc_endpoints(Filters=[{"Name": "vpc-id", "Values": [vpc]},
                                                {"Name": "service-name", "Values": [f"com.amazonaws.{R}.s3"]}])["VpcEndpoints"]:
         ec2.create_vpc_endpoint(VpcId=vpc, ServiceName=f"com.amazonaws.{R}.s3", RouteTableIds=rts)
 
-    # --- RDS MySQL (password managed by RDS in Secrets Manager)
-    if not exists(lambda: rds.describe_db_subnet_groups(DBSubnetGroupName=NAME), "DBSubnetGroupNotFoundFault"):
-        rds.create_db_subnet_group(DBSubnetGroupName=NAME, DBSubnetGroupDescription=NAME, SubnetIds=subnets)
-    if not exists(lambda: rds.describe_db_instances(DBInstanceIdentifier=NAME), "DBInstanceNotFound"):
-        rds.create_db_instance(DBInstanceIdentifier=NAME, Engine="mysql", EngineVersion="8.4",
-            DBInstanceClass="db.t4g.micro", AllocatedStorage=20, StorageType="gp3", DBName="intranet",
-            MasterUsername="intranet", ManageMasterUserPassword=True, DBSubnetGroupName=NAME,
-            VpcSecurityGroupIds=[db_sg], PubliclyAccessible=False, BackupRetentionPeriod=7,
-            PreferredBackupWindow="02:00-02:30", DeletionProtection=True, StorageEncrypted=True,
-            CopyTagsToSnapshot=True, AutoMinorVersionUpgrade=True)
-    print("waiting for RDS (can take ~10 min)..."); rds.get_waiter("db_instance_available").wait(
-        DBInstanceIdentifier=NAME, WaiterConfig={"Delay": 30, "MaxAttempts": 60})
-    d = rds.describe_db_instances(DBInstanceIdentifier=NAME)["DBInstances"][0]
-    db_host, db_secret = d["Endpoint"]["Address"], d["MasterUserSecret"]["SecretArn"]
+    # --- shared RDS MySQL server (also hosts the CRM); intranet gets its own database + user
+    d = rds.describe_db_instances(DBInstanceIdentifier=DB_SERVER)["DBInstances"][0]
+    for g in d["VpcSecurityGroups"]:   # allow MySQL from the intranet app only (additive)
+        exists(lambda: ec2.authorize_security_group_ingress(GroupId=g["VpcSecurityGroupId"], IpPermissions=[{
+            "IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306,
+            "UserIdGroupPairs": [{"GroupId": app_sg, "Description": "demeisen-intranet App Runner"}]}]),
+            "InvalidPermission.Duplicate")
+    db_admin_secret = d["MasterUserSecret"]["SecretArn"]
+    if not exists(lambda: sm.describe_secret(SecretId=f"{NAME}/db-password"), "ResourceNotFoundException"):
+        sm.create_secret(Name=f"{NAME}/db-password", SecretString=secrets.token_urlsafe(24).replace("-", "x"))
+    db_secret = sm.describe_secret(SecretId=f"{NAME}/db-password")["ARN"]
 
     if not exists(lambda: sm.describe_secret(SecretId=f"{NAME}/flask-secret"), "ResourceNotFoundException"):
         sm.create_secret(Name=f"{NAME}/flask-secret", SecretString=secrets.token_hex(32))
@@ -99,6 +93,10 @@ def main():
         {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": f"arn:aws:s3:::{FILES}/*"},
         {"Effect": "Allow", "Action": "s3:ListBucket", "Resource": f"arn:aws:s3:::{FILES}"},
         {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": [db_secret, flask_secret]}]})
+    # first deploy only: let the app create its database/user with the server admin login (removed afterwards)
+    if "--bootstrap" in __import__("sys").argv:
+        iam.put_role_policy(RoleName=f"{NAME}-apprunner-instance", PolicyName="bootstrap-db-admin", PolicyDocument=json.dumps(
+            {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": db_admin_secret}]}))
 
     # --- CodeBuild: builds the image from a source zip in the build bucket
     spec = """version: 0.2
@@ -119,7 +117,7 @@ phases:
     (cb.update_project if cb.batch_get_projects(names=[NAME])["projects"] else cb.create_project)(**proj)
 
     # --- App Runner (created once the first image exists)
-    print(json.dumps(dict(repo=repo, db_host=db_host, db_secret=db_secret, flask_secret=flask_secret,
+    print(json.dumps(dict(repo=repo, db_host=d["Endpoint"]["Address"], db_secret=db_secret, flask_secret=flask_secret,
                           access_role=access_role, inst_role=inst_role, app_sg=app_sg, subnets=subnets,
                           files=FILES, build=BUILD)))
 

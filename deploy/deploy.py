@@ -3,7 +3,7 @@ Usage: python3 deploy/deploy.py [git-ref]        (default HEAD; run deploy/aws_s
 Steps: git archive -> S3 -> CodeBuild builds/pushes image -> App Runner created or redeployed."""
 import io, json, subprocess, sys, time, boto3
 
-R = "eu-west-2"; NAME = "demeisen-intranet"
+R = "eu-west-2"; NAME = "demeisen-intranet"; DB_SERVER = "demeisen-crm-poc"
 ACCT = boto3.client("sts").get_caller_identity()["Account"]
 FILES = f"{NAME}-files-{ACCT}"; BUILD = f"{NAME}-build-{ACCT}"
 cb = boto3.client("codebuild", region_name=R); ar = boto3.client("apprunner", region_name=R)
@@ -39,8 +39,9 @@ def wait(arn):
 
 
 def create_service(env_extra):
-    d = rds.describe_db_instances(DBInstanceIdentifier=NAME)["DBInstances"][0]
-    db_secret = d["MasterUserSecret"]["SecretArn"]
+    d = rds.describe_db_instances(DBInstanceIdentifier=DB_SERVER)["DBInstances"][0]
+    db_secret = sm.describe_secret(SecretId=f"{NAME}/db-password")["ARN"]
+    admin = d["MasterUserSecret"]["SecretArn"]
     flask_secret = sm.describe_secret(SecretId=f"{NAME}/flask-secret")["ARN"]
     vpc = ec2.describe_vpcs(Filters=[{"Name": "is-default", "Values": ["true"]}])["Vpcs"][0]["VpcId"]
     subnets = [s["SubnetId"] for s in ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc]}])["Subnets"]]
@@ -50,13 +51,13 @@ def create_service(env_extra):
         VpcConnectorName=NAME, Subnets=subnets, SecurityGroups=[app_sg])["VpcConnector"]["VpcConnectorArn"]
     repo = ecr.describe_repositories(repositoryNames=[NAME])["repositories"][0]["repositoryUri"]
     env = {"DB_HOST": d["Endpoint"]["Address"], "DB_USER": "intranet", "DB_NAME": "intranet",
-           "FILES_BUCKET": FILES, "AWS_REGION": R, **env_extra}
+           "FILES_BUCKET": FILES, "AWS_REGION": R, "DB_ADMIN_USER": d["MasterUsername"], **env_extra}
     return ar.create_service(ServiceName=NAME,
         SourceConfiguration={"AutoDeploymentsEnabled": False,
             "AuthenticationConfiguration": {"AccessRoleArn": iam.get_role(RoleName=f"{NAME}-apprunner-ecr")["Role"]["Arn"]},
             "ImageRepository": {"ImageIdentifier": f"{repo}:latest", "ImageRepositoryType": "ECR",
                 "ImageConfiguration": {"Port": "8080", "RuntimeEnvironmentVariables": env,
-                    "RuntimeEnvironmentSecrets": {"DB_PASSWORD": f"{db_secret}:password::",
+                    "RuntimeEnvironmentSecrets": {"DB_PASSWORD": db_secret, "DB_ADMIN_PASSWORD": f"{admin}:password::",
                                                   "INTRANET_SECRET": flask_secret}}}},
         InstanceConfiguration={"Cpu": "1 vCPU", "Memory": "2 GB",
                                "InstanceRoleArn": iam.get_role(RoleName=f"{NAME}-apprunner-instance")["Role"]["Arn"]},
