@@ -6,16 +6,16 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='ui/demeisen.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>
 {% set here = request.path %}
-{% if me %}<header class="top"><div class="wrap">
-  <div class="brand-col"><a class="brand" href="/"><i class="brand-mark" aria-hidden="true"></i>{{ cfg.BRAND_NAME }}{% if not cfg.APPS %} <span>Intranet</span>{% endif %}</a>
-    {% if cfg.APPS %}<nav class="apps" aria-label="Apps"><a href="/" aria-current="true">Intranet</a>{% for a in cfg.APPS %}<a href="{{ a.url }}">{{ a.title }}</a>{% endfor %}</nav>{% endif %}</div>
+{% if me %}<div class="appbar"><div class="wrap">
+  <a class="brand" href="/"><i class="brand-mark" aria-hidden="true"></i>{{ cfg.BRAND_NAME }}</a>
+  <nav class="appbar-apps" aria-label="Apps">{% for a in cfg.APPS %}<a href="{{ a.url }}"{% if a.current %} aria-current="true"{% endif %}>{{ a.title }}</a>{% endfor %}</nav>
+  <div class="appbar-user"><span>{{ me.name }}</span>{% if not shared_signin %}<a href="/password">Password</a>{% endif %}<a href="/logout">Sign out</a></div>
+</div></div>
+<header class="top appnav"><div class="wrap">
   <nav class="tabs" aria-label="Sections">
     {% for href, label in [("/", "Home"), ("/nda", "NDAs"), ("/issue", "Issue document"), ("/verify", "Verify"), ("/memos", "Memos"), ("/audit", "Audit")] %}
     <a href="{{ href }}"{% if (href == "/" and here == "/") or (href != "/" and here.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
   </nav>
-  <div class="top-right">
-    <span>{{ me.name }}</span>{% if not shared_signin %}<a href="/password">Password</a>{% endif %}<a href="/logout">Sign out</a>
-  </div>
 </div></header>{% endif %}
 <main><div class="wrap">{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
 {% block body %}{% endblock %}</div></main></body></html>

@@ -18,9 +18,10 @@ MEMBERS = [
 # Memos at or above this value are flagged "material" (all members must sign off)
 MATERIAL_THRESHOLD = 5000
 
-# Other Demeisen apps, shown in the header app switcher
+# Demeisen bar (top of every page): all apps, in the same order in every app. [] shows just this app.
 APPS = [
-    {"title": "Investor CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net")},
+    {"title": "Intranet", "url": "/", "current": True},
+    {"title": "Investor CRM", "url": os.environ.get("CRM_URL", "https://d1ld7k58u2qhpo.cloudfront.net/")},
 ]
 
 # Home page tiles
